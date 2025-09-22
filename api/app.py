@@ -7,7 +7,9 @@
 from flask import Flask, request, jsonify
 from supabase import create_client, Client
 import os
+from dotenv import load_dotenv
 
+load_dotenv()
 supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_KEY")
 supabase: Client = create_client(supabase_url, supabase_key)
@@ -16,7 +18,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Nixo Hire Project"
+    return 
 
 @app.route('/api/webhooks/github', methods=['POST'])
 def github_webhook():
@@ -30,31 +32,21 @@ def github_webhook():
         if event_type == 'pull_request':
             pr_data = payload.get('pull_request', {})
             repo_data = payload.get('repository', {})
-            
-            repo_result = supabase.table('repositories').upsert({
-                'name': repo_data.get('name'),
-                'full_name': repo_data.get('full_name'),
-                'owner': repo_data.get('owner', {}).get('login')
-            }, on_conflict='full_name').execute()
-            
-            if not repo_result.data:
-                raise Exception("Failed to insert repository")
-            
-            repo_id = repo_result.data[0]['id']
 
-            supabase.table('pull_requests').upsert({
-                'repo_id': repo_id,
-                'pr_number': pr_data.get('number'),
-                'title': pr_data.get('title'),
-                'state': pr_data.get('state'),
-                'author': pr_data.get('user', {}).get('login'),
-                'url': pr_data.get('html_url'),
-                'github_created_at': pr_data.get('created_at'),
-                'github_updated_at': pr_data.get('updated_at')
-            }, on_conflict=["repo_id", "pr_number"]).execute()
-
+            result = supabase.rpc('handle_pr_webhook', {
+                'repo_name': repo_data.get('name'),
+                'repo_full_name': repo_data.get('full_name'),
+                'repo_owner': repo_data.get('owner', {}).get('login'),
+                'pr_num': pr_data.get('number'),
+                'pr_title': pr_data.get('title'),
+                'pr_state': pr_data.get('state'),
+                'pr_author': pr_data.get('user', {}).get('login'),
+                'pr_url': pr_data.get('html_url'),
+                'pr_created_at': pr_data.get('created_at'),
+                'pr_updated_at': pr_data.get('updated_at')
+            }).execute()
+            
             print(f"Stored PR: {pr_data.get('title')}")
-            
             return jsonify({"message": "Success", "event": event_type})
         
         elif event_type:
@@ -80,5 +72,5 @@ def get_prs():
         print(f"Error: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-# Vercel thing I guess
-app = app
+if __name__ == "__main__":
+    app.run()
