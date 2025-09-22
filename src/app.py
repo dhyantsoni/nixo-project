@@ -4,7 +4,8 @@
 # Flask server to handle all new PRs
 # Dump into a DB (Supabase)
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
+from flask_socketio import SocketIO, emit
 from supabase import create_client, Client
 import os
 from dotenv import load_dotenv
@@ -14,11 +15,20 @@ supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_KEY")
 supabase: Client = create_client(supabase_url, supabase_key)
 
-app = Flask(__name__)
+app = Flask(__name__, 
+            template_folder='templates',
+            static_folder='templates',
+            static_url_path='')
+app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key')
+socketio = SocketIO(app, cors_allowed_origins="*")
 
 @app.route('/')
 def home():
-    return 
+    return render_template('dashboard.html')
+
+@socketio.on('connect')
+def handle_connect():
+    emit('connected', {'message': 'Connected'})
 
 @app.route('/api/webhooks/github', methods=['POST'])
 def github_webhook():
@@ -47,6 +57,10 @@ def github_webhook():
             }).execute()
             
             print(f"Stored PR: {pr_data.get('title')}")
+            
+            # Broadcast update to all connected clients
+            socketio.emit('pr_update', {'refresh': True})
+            
             return jsonify({"message": "Success", "event": event_type})
         
         elif event_type:
@@ -73,4 +87,4 @@ def get_prs():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    app.run()
+    socketio.run(app, debug=True, host='0.0.0.0', port=5000)
