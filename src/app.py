@@ -58,7 +58,6 @@ def github_webhook():
             
             print(f"Stored PR: {pr_data.get('title')}")
             
-            # Broadcast update to all connected clients
             socketio.emit('pr_update', {'refresh': True})
             
             return jsonify({"message": "Success", "event": event_type})
@@ -77,11 +76,26 @@ def get_prs():
             return jsonify({"error": "Database not available"}), 500
             
         result = supabase.table('pull_requests')\
-            .select('*, repositories(name, owner)')\
+            .select('*, repositories(*)')\
             .order('created_at', desc=True)\
             .execute()
         
-        return jsonify({"data": result.data})
+        transformed_data = []
+        for pr in result.data:
+            transformed_pr = {
+                'id': pr.get('id'),
+                'pr_num': pr.get('pr_num'),
+                'pr_title': pr.get('title', pr.get('pr_title')),
+                'pr_state': pr.get('state', pr.get('pr_state')),
+                'pr_author': pr.get('author', pr.get('pr_author')),
+                'pr_url': pr.get('url', pr.get('pr_url')),
+                'created_at': pr.get('github_created_at', pr.get('created_at')),
+                'updated_at': pr.get('github_updated_at', pr.get('updated_at')),
+                'repositories': pr.get('repositories', {})
+            }
+            transformed_data.append(transformed_pr)
+        
+        return jsonify({"data": transformed_data})
     except Exception as e:
         print(f"Error: {str(e)}")
         return jsonify({"error": str(e)}), 500
